@@ -7,17 +7,20 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/acarl005/stripansi"
 	"github.com/slack-go/slack"
 )
 
+var wg sync.WaitGroup
+
 func main() {
 	var SLACK_WEBHOOK, message string
-	var isPostAll bool
+	var postLineByLine bool
 
 	flag.StringVar(&SLACK_WEBHOOK, "u", "", "Slack webhook URL")
-	flag.BoolVar(&isPostAll, "-l", false, "Post message line-by-line")
+	flag.BoolVar(&postLineByLine, "l", false, "Post message line-by-line")
 	flag.Parse()
 	if SLACK_WEBHOOK == "" {
 		SLACK_WEBHOOK = os.Getenv("SLACK_WEBHOOK_URL")
@@ -36,18 +39,21 @@ func main() {
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		if isPostAll {
-			message += scanner.Text() + "\n"
+		if postLineByLine {
+			wg.Add(1)
+			go postSlackMessage(SLACK_WEBHOOK, scanner.Text())
 		} else {
-			postSlackMessage(SLACK_WEBHOOK, scanner.Text())
+			message += scanner.Text() + "\n"
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		log.Fatalf("Error reading: %v", err)
 	}
-	if isPostAll {
-		postSlackMessage(SLACK_WEBHOOK, message)
+	if !postLineByLine {
+		wg.Add(1)
+		go postSlackMessage(SLACK_WEBHOOK, message)
 	}
+	wg.Wait()
 }
 
 func postSlackMessage(SLACK_WEBHOOK, message string) {
@@ -58,4 +64,5 @@ func postSlackMessage(SLACK_WEBHOOK, message string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer wg.Done()
 }
