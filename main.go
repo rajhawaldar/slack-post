@@ -2,11 +2,17 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/acarl005/stripansi"
+	"github.com/slack-go/slack"
 )
 
 func main() {
@@ -49,7 +55,21 @@ func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Println("Posting following message on Slack:")
 	for scanner.Scan() {
-		data := scanner.Text()
+		input := scanner.Text()
+		data := stripansi.Strip(input)
+		attachment := slack.Attachment{
+			Color: "good",
+			Text:  data,
+			Ts:    json.Number(strconv.FormatInt(time.Now().Unix(), 10)),
+		}
+		msg := slack.WebhookMessage{
+			Attachments: []slack.Attachment{attachment},
+		}
+
+		err := slack.PostWebhook(SLACK_WEBHOOK, &msg)
+		if err != nil {
+			fmt.Println(err)
+		}
 		fmt.Println(data)
 	}
 }
