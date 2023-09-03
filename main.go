@@ -2,47 +2,29 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/acarl005/stripansi"
 	"github.com/slack-go/slack"
 )
 
 func main() {
-	SLACK_WEBHOOK := os.Getenv("SLACK_WEBHOOK_URL")
-	var WebHookURL string
-	var isPostFile bool
-	flag.StringVar(&WebHookURL, "u", "", "Slack webhook URL")
-	flag.BoolVar(&isPostFile, "f", false, "Input is a file path")
+	var SLACK_WEBHOOK, message string
+	var isPostAll bool
+
+	flag.StringVar(&SLACK_WEBHOOK, "u", "", "Slack webhook URL")
+	flag.BoolVar(&isPostAll, "-l", false, "Post message line-by-line")
 	flag.Parse()
-	tail := flag.Args()
-
-	if !strings.Contains(SLACK_WEBHOOK, "https://hooks.slack.com") {
-		if WebHookURL == "" {
-			fmt.Fprintf(os.Stderr, "Please set SLACK_WEBHOOK_URL as environment variable or pass it with -u flag")
-			os.Exit(1)
-		}
+	if SLACK_WEBHOOK == "" {
+		SLACK_WEBHOOK = os.Getenv("SLACK_WEBHOOK_URL")
 	}
-	if isPostFile {
-		if len(tail) == 0 {
-			fmt.Fprintf(os.Stderr, "Please provide file names with -f flag.\n")
-			os.Exit(1)
-		}
-		for _, filePath := range tail {
-			if _, err := os.Stat(filePath); err == nil {
-				fmt.Println("File Exist:", filePath)
-			} else {
-				fmt.Fprintf(os.Stderr, filePath+" does not exist\n")
-
-			}
-		}
+	if !strings.Contains(SLACK_WEBHOOK, "https://hooks.slack.com") {
+		fmt.Fprintf(os.Stderr, "Please set SLACK_WEBHOOK_URL as environment variable or pass it with -u flag.\nRefer: https://api.slack.com/messaging/webhooks#getting_started\n")
+		os.Exit(1)
 	}
 	input, e := os.Stdin.Stat()
 	if e != nil {
@@ -53,23 +35,27 @@ func main() {
 		os.Exit(0)
 	}
 	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Println("Posting following message on Slack:")
 	for scanner.Scan() {
-		input := scanner.Text()
-		data := stripansi.Strip(input)
-		attachment := slack.Attachment{
-			Color: "good",
-			Text:  data,
-			Ts:    json.Number(strconv.FormatInt(time.Now().Unix(), 10)),
+		if isPostAll {
+			message += scanner.Text() + "\n"
+		} else {
+			postSlackMessage(SLACK_WEBHOOK, scanner.Text())
 		}
-		msg := slack.WebhookMessage{
-			Attachments: []slack.Attachment{attachment},
-		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Fatalf("Error reading: %v", err)
+	}
+	if isPostAll {
+		postSlackMessage(SLACK_WEBHOOK, message)
+	}
+}
 
-		err := slack.PostWebhook(SLACK_WEBHOOK, &msg)
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Println(data)
+func postSlackMessage(SLACK_WEBHOOK, message string) {
+	msg := slack.WebhookMessage{
+		Text: stripansi.Strip(message),
+	}
+	err := slack.PostWebhook(SLACK_WEBHOOK, &msg)
+	if err != nil {
+		log.Fatal(err)
 	}
 }
